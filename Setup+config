@@ -1,0 +1,116 @@
+Mô hình cài đặt: Bao gồm 2 server, server 1 cài ELK, server 2 cài filebeat
+
+Các port sử dụng của các services bao gồm. ES - 9200, Lostash - 5400, KIBANA - 5601
+
+Platform sử dụng cài đặt là UBUNTU, version của ELK stack là 7.5. thực hiện cài đặt các gói theo danh sách dưới đây.
+
+1, Cài đặt ES (server1)
+
+
+sudo apt-get install apt-transport-https
+
+echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-7.x.list
+sudo apt-get update && sudo apt-get install elasticsearch
+
+Tiếp theo ta config file cấu hình của ES: vim /etc/elasticsearch/elasticsearch.yml
+
+	path.data: /var/lib/elasticsearch
+	path.logs: /var/log/elasticsearch
+	network.host: x.x.x.x.x
+	discovery.seed_hosts : []
+	http.port: 9200
+	xpack.security.enabled: true
+	xpack.security.audit.enabled: true
+	xpack.security.transport.ssl.enabled: true
+	xpack.license.self_generated.type: basic
+
+
+Khởi động ES:  systemctl start elasticsearch.service
+
+2, Cài đặt KIBANA (server 1)
+
+sudo apt-get install apt-transport-https
+echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-7.x.list
+sudo apt-get update && sudo apt-get install kibana
+
+	server.host:"x.x.x.x"
+	elasticsearch.username: "kibana"
+	elasticsearch.password: "XXXXXXXXXX"
+	elasticsearch.hosts: ["http://localhost:9200"]
+
+Khởi động KIBANA:  systemctl start kibana.service
+
+3, Cài đặt Logstash (server 1)
+
+Yêu câu: Cài đặt JAVA.
+
+sudo apt-get install apt-transport-https
+echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-7.x.list
+sudo apt-get update && sudo apt-get install logstash
+
+Trong thư mục: /etc/logstash/conf.d/ tạo các file tương ứng dưới đây
+
+02-beats-input.conf (Config input )
+
+	input {
+	  beats {
+            port => 5044
+	  }
+	}
+
+10-syslog-filter.conf (Config filter)
+
+
+	filter {
+	if [log_type] == "mongodb" {
+	grok {
+	match => {"message" => "%{TIMESTAMP_ISO8601:timestamp}\s+%{MONGO3_SEVERITY:severity}\s+%{MONGO3_COMPONENT:component}\s+(?:\[%{DATA:context}\])?\s+%{GREEDYDATA:message}"}
+	}
+	}
+	if [log_type] == "nginx" {
+	grok {
+	match => { "message" => "%{SYSLOGTIMESTAMP:syslog_timestamp} %{SYSLOGHOST:syslog_hostname} %{DATA:syslog_program}(?:\[%{POSINT:syslog_pid}\])?: %{GREEDYDATA:syslog_message}"}
+	}
+	}
+
+	}
+
+
+30-elasticsearch-output.conf (Config output)
+
+	output {
+	elasticsearch {
+	hosts => ["localhost:9200"]
+	user => "logstash_internal" # User này tạo trên giao diện Kibana
+	password => "xxxxx"
+	manage_template => false
+	index => "%{domain}-%{log_type}-%{+YYYY.MM.dd}" # Index sẽ được tạo theo format, ví dụ: abc.vn-mongodb-2020.08.10
+	}
+	}
+
+
+Khởi động Logstash:  systemctl start logstash.service
+
+4, Cài đặt Filebeat (server 2)
+
+Trên server muốn đẩy log sang ELK ta tải file và cài đặt Filebeat.
+curl -L -O https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.5.1-amd64.deb
+sudo dpkg -i filebeat-7.5.1-amd64.deb
+
+	- type: log
+	enabled: true
+	paths:
+	- /var/log/mongodb/mongod.log
+	fields:
+	domain: abc.vn
+	log_type: mongodb
+	fields_under_root: true
+	multiple:
+	pattern: '^\['
+	negate: true
+	match: after
+
+	output.logstash:
+	# The Logstash hosts
+	hosts: ["x.x.x.x:5044"]
+

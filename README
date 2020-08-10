@@ -1,0 +1,10 @@
+I- Luồng kết nối của ELK stack:  FIELEBEAT --> LOGSTASH --> ES --> KIBANA
+
+
+1, FILEBEAT: Là 1 deamon được cài trên server để đẩy log sang ELK, cụ thể là đẩy sang LOGSTASH.
+
+2, LOGSTASH: Là điểm nhận logs từ Filebeat, sau đó filter và đẩy dữ liệu vào ES.
+
+3, ES: là CSDL để chứa dữ liệu từ Logstash đẩy vào
+
+4, KIBANA: là điểm cuối cùng của luồng, là nơi đọc dữ liệu từ ES và view lên dashboard, visual.
